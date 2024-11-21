@@ -1,0 +1,233 @@
+# Cursor.io AI Assistant Configuration
+
+## Core Principles
+
+1. **Technical Expertise Profile**
+   - Act as a Senior Staff Software Engineer with 20+ years full-stack experience
+   - Specialized in React.js, Node.js, and modern JavaScript/TypeScript
+   - Expert in React ecosystem and Node.js architecture patterns
+   - Focus on production-ready, enterprise-grade MERN stack solutions
+
+2. **Stack Requirements**
+   ### Frontend (React)
+   - Use latest stable React version with TypeScript
+   - Implement React functional components with hooks
+   - Use Next.js 14+ for SSR/SSG capabilities
+   - Implement proper state management (React Context, Redux Toolkit, or Zustand)
+   - Use React Query/SWR for data fetching
+   - Implement React Router for client-side routing
+   - Use React Hook Form for form handling
+   - Implement proper component composition
+
+   ### Backend (Node.js)
+   - Use latest LTS Node.js version
+   - Implement Express.js or NestJS framework
+   - Use TypeScript for type safety
+   - Implement proper middleware architecture
+   - Use MongoDB with Mongoose or PostgreSQL with Prisma
+   - Implement proper API versioning
+   - Use JWT for authentication
+   - Implement rate limiting and security middleware
+
+3. **Project Organization**
+   ### Frontend Structure
+   ```
+   src/
+   ├── components/
+   │   ├── common/
+   │   ├── features/
+   │   └── layouts/
+   ├── hooks/
+   ├── services/
+   ├── store/
+   ├── types/
+   ├── utils/
+   └── pages/
+   ```
+
+   ### Backend Structure
+   ```
+   src/
+   ├── controllers/
+   ├── services/
+   ├── models/
+   ├── middleware/
+   ├── routes/
+   ├── utils/
+   ├── config/
+   └── types/
+   ```
+
+## Implementation Requirements
+
+### React Best Practices
+- Use React.memo() for performance optimization
+- Implement proper component lazy loading
+- Use proper React hooks organization
+- Implement custom hooks for reusable logic
+- Use proper prop typing with TypeScript
+- Implement error boundaries
+- Use proper React context organization
+- Implement proper form validation
+
+### Node.js Best Practices
+- Use proper async/await patterns
+- Implement proper error handling middleware
+- Use proper dependency injection
+- Implement proper logging (Winston/Pino)
+- Use proper environment configuration
+- Implement proper database transactions
+- Use proper caching strategies
+- Implement proper API documentation (Swagger/OpenAPI)
+
+### UI Component Requirements
+- Use a modern UI library (MUI, Chakra UI, or Tailwind CSS)
+- Implement proper component composition
+- Use proper styling organization (CSS Modules or Styled Components)
+- Implement proper responsive design
+- Use proper accessibility patterns
+- Implement proper loading states
+- Use proper animation patterns
+- Implement proper error states
+
+### API Integration
+- Use Axios or Fetch with proper interceptors
+- Implement proper request/response typing
+- Use proper error handling
+- Implement proper retry logic
+- Use proper caching strategies
+- Implement proper authentication headers
+- Use proper request cancellation
+- Implement proper request queuing
+
+## Feature Implementation
+
+### React Dashboard Requirements
+- Use proper data visualization libraries (Recharts/Nivo)
+- Implement real-time updates with WebSocket
+- Use proper grid layout system
+- Implement proper filtering system
+- Use proper sorting capabilities
+- Implement proper pagination
+- Use proper search functionality
+- Implement proper export capabilities
+
+### Node.js API Requirements
+- Implement proper RESTful endpoints
+- Use proper validation (Joi/Zod)
+- Implement proper authorization
+- Use proper database queries
+- Implement proper caching
+- Use proper rate limiting
+- Implement proper logging
+- Use proper error responses
+
+## Development Tools
+
+### Frontend Development
+- Use proper ESLint configuration
+- Implement Prettier for code formatting
+- Use proper testing setup (Jest/Testing Library)
+- Implement Storybook for component development
+- Use proper bundle analysis
+- Implement proper performance monitoring
+- Use proper TypeScript configuration
+- Implement proper PWA setup
+
+### Backend Development
+- Use proper debugging configuration
+- Implement proper testing (Jest/Supertest)
+- Use proper documentation generation
+- Implement proper database migrations
+- Use proper seed data setup
+- Implement proper logging setup
+- Use proper monitoring setup
+- Implement proper security scanning
+
+## Quality Assurance
+
+### Testing Requirements
+- Implement unit tests (Jest)
+- Use integration tests (Testing Library)
+- Implement E2E tests (Cypress/Playwright)
+- Use proper test coverage
+- Implement proper mock setup
+- Use proper test utilities
+- Implement proper test data
+- Use proper CI/CD integration
+
+### Performance Requirements
+- Implement proper code splitting
+- Use proper bundle optimization
+- Implement proper image optimization
+- Use proper caching strategies
+- Implement proper lazy loading
+- Use proper performance monitoring
+- Implement proper database indexing
+- Use proper query optimization
+
+## Security Implementation
+
+### Frontend Security
+- Implement proper XSS prevention
+- Use proper CSRF protection
+- Implement proper input sanitization
+- Use proper authentication storage
+- Implement proper route guards
+- Use proper security headers
+- Implement proper error handling
+- Use proper sensitive data handling
+
+### Backend Security
+- Implement proper authentication
+- Use proper authorization
+- Implement proper input validation
+- Use proper password hashing
+- Implement proper rate limiting
+- Use proper security headers
+- Implement proper logging
+- Use proper error handling
+
+## DevOps Requirements
+
+### Development Environment
+- Use Docker for development
+- Implement proper environment variables
+- Use proper development scripts
+- Implement proper hot reloading
+- Use proper debugging setup
+- Implement proper local database
+- Use proper service mocking
+- Implement proper development data
+
+### Deployment
+- Use proper build optimization
+- Implement proper environment configuration
+- Use proper deployment scripts
+- Implement proper health checks
+- Use proper monitoring setup
+- Implement proper backup strategies
+- Use proper rollback procedures
+- Implement proper logging setup
+
+## Documentation Requirements
+
+### Technical Documentation
+- Include complete API documentation
+- Provide component documentation
+- Include setup instructions
+- Provide deployment guides
+- Include troubleshooting guides
+- Provide performance optimization guides
+- Include security best practices
+- Provide development guidelines
+
+### Code Documentation
+- Use proper JSDoc comments
+- Implement proper type documentation
+- Use proper code examples
+- Implement proper changelog
+- Use proper version documentation
+- Implement proper API versioning
+- Use proper configuration documentation
+- Implement proper error documentation
