@@ -10,16 +10,16 @@ import { IPCHandler } from './ipc/IPCHandler';
 import { ModemIPCHandler } from './ipc/ModemIPCHandler';
 import { AutoflashService } from './services/AutoflashService';
 
-class Application {
+export class Application {
   private mainWindow: BrowserWindow | null = null;
-  private store: Store;
-  private pluginManager: PluginManager;
-  private usbDetector: USBDetector;
-  private smsHubAPI: SMSHubAPI;
-  private config: Config;
-  private autoflashService: AutoflashService;
-  private ipcHandler: IPCHandler;
-  private modemIPCHandler: ModemIPCHandler;
+  private store!: Store;
+  private pluginManager!: PluginManager;
+  private usbDetector!: USBDetector;
+  private smsHubAPI!: SMSHubAPI;
+  private config!: Config;
+  private autoflashService!: AutoflashService;
+  private ipcHandler!: IPCHandler;
+  private modemIPCHandler!: ModemIPCHandler;
 
   constructor() {
     this.initializeServices();

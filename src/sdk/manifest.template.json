@@ -1,0 +1,42 @@
+{
+  "name": "custom-modem-plugin",
+  "version": "1.0.0",
+  "author": "Your Name",
+  "description": "Support for Custom Modem",
+  "main": "index.js",
+  "supportedModems": [
+    {
+      "vendor": "Vendor Name",
+      "models": ["Model1", "Model2"]
+    }
+  ],
+  "dependencies": [],
+  "minAppVersion": "1.0.0",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "commandTimeout": {
+        "type": "number",
+        "default": 10000,
+        "description": "AT command timeout in milliseconds"
+      },
+      "maxRetries": {
+        "type": "number",
+        "default": 3,
+        "description": "Maximum command retry attempts"
+      },
+      "customSetting": {
+        "type": "string",
+        "default": "",
+        "description": "Custom modem-specific setting"
+      }
+    }
+  },
+  "capabilities": {
+    "ussd": false,
+    "customCommands": false,
+    "networkSelection": false,
+    "signalMonitoring": true,
+    "autoFlash": false
+  }
+} 

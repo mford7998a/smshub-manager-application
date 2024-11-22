@@ -1,0 +1,57 @@
+{
+  "name": "sierra-em7455",
+  "version": "1.0.0",
+  "author": "SMSHub",
+  "description": "Support for Sierra Wireless EM7455 LTE modem",
+  "main": "index.js",
+  "supportedModems": [
+    {
+      "vendor": "Sierra Wireless",
+      "models": ["EM7455", "EM7455-1", "EM7455-2"]
+    }
+  ],
+  "dependencies": [],
+  "minAppVersion": "1.0.0",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "commandTimeout": {
+        "type": "number",
+        "default": 15000,
+        "description": "AT command timeout in milliseconds"
+      },
+      "maxRetries": {
+        "type": "number",
+        "default": 3,
+        "description": "Maximum command retry attempts"
+      },
+      "preferredBands": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["B2", "B4", "B5", "B12", "B13", "B25", "B26", "B41"]
+        },
+        "default": [],
+        "description": "Preferred LTE bands (empty for auto)"
+      },
+      "networkMode": {
+        "type": "string",
+        "enum": ["auto", "lte", "wcdma", "gsm"],
+        "default": "auto",
+        "description": "Preferred network mode"
+      },
+      "powerSaving": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable power saving features"
+      }
+    }
+  },
+  "capabilities": {
+    "ussd": true,
+    "customCommands": true,
+    "networkSelection": true,
+    "signalMonitoring": true,
+    "autoFlash": true
+  }
+} 

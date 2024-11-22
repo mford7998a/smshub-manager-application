@@ -1,88 +1,119 @@
-import winston from 'winston';
-import path from 'path';
+import * as winston from 'winston';
+import * as path from 'path';
 import { app } from 'electron';
+import { encrypt } from './encryption';
+import { ConfigService } from '../services/ConfigService';
 
-// Custom log format
-const logFormat = winston.format.combine(
-  winston.format.timestamp(),
-  winston.format.errors({ stack: true }),
-  winston.format.printf(({ level, message, timestamp, stack }) => {
-    return `${timestamp} ${level.toUpperCase()}: ${message}${stack ? '\n' + stack : ''}`;
-  })
-);
+export class Logger {
+  private logger: winston.Logger;
+  private static config: ConfigService;
+  private static instances: Map<string, Logger> = new Map();
 
-// Create logs directory if it doesn't exist
-const logsDir = path.join(app.getPath('userData'), 'logs');
+  static initialize(config: ConfigService): void {
+    this.config = config;
+  }
 
-// Create logger instance
-export const logger = winston.createLogger({
-  level: process.env.NODE_ENV === 'development' ? 'debug' : 'info',
-  format: logFormat,
-  transports: [
-    // Write all logs to files
-    new winston.transports.File({
-      filename: path.join(logsDir, 'error.log'),
-      level: 'error',
-      maxsize: 5242880, // 5MB
-      maxFiles: 5,
-      tailable: true
-    }),
-    new winston.transports.File({
-      filename: path.join(logsDir, 'combined.log'),
-      maxsize: 5242880, // 5MB
-      maxFiles: 5,
-      tailable: true
-    })
-  ]
-});
+  constructor(context: string) {
+    if (!Logger.instances.has(context)) {
+      this.logger = this.createLogger(context);
+      Logger.instances.set(context, this);
+    }
+    return Logger.instances.get(context)!;
+  }
 
-// Add console output in development
-if (process.env.NODE_ENV === 'development') {
-  logger.add(new winston.transports.Console({
-    format: winston.format.combine(
-      winston.format.colorize(),
-      logFormat
-    )
-  }));
-}
+  private createLogger(context: string): winston.Logger {
+    const logDir = Logger.config?.get(
+      'logging.directory',
+      path.join(app.getPath('userData'), 'logs')
+    );
 
-// Error handler utility
-export class ErrorHandler {
-  static handle(error: Error, context: string): void {
-    logger.error(`Error in ${context}: ${error.message}`, {
-      error,
-      context,
-      stack: error.stack
+    const logLevel = Logger.config?.get('logging.level', 'info');
+    const maxFiles = Logger.config?.get('logging.maxFiles', 5);
+    const maxSize = Logger.config?.get('logging.maxSize', 10485760); // 10MB
+    const encryptLogs = Logger.config?.get('security.encryptLogs', true);
+    const encryptionKey = Logger.config?.get('security.encryptionKey', '');
+
+    const format = winston.format.combine(
+      winston.format.timestamp(),
+      winston.format.printf(({ timestamp, level, message, ...meta }) => {
+        const formattedMessage = `[${timestamp}] [${context}] ${level}: ${message}`;
+        const metaStr = Object.keys(meta).length ? `\n${JSON.stringify(meta, null, 2)}` : '';
+        return formattedMessage + metaStr;
+      })
+    );
+
+    const transports: winston.transport[] = [
+      new winston.transports.Console({
+        format: winston.format.colorize({ all: true })
+      }),
+      new winston.transports.File({
+        filename: path.join(logDir, 'error.log'),
+        level: 'error',
+        maxsize: maxSize,
+        maxFiles,
+        format: encryptLogs ? this.createEncryptedFormat(encryptionKey) : format
+      }),
+      new winston.transports.File({
+        filename: path.join(logDir, 'combined.log'),
+        maxsize: maxSize,
+        maxFiles,
+        format: encryptLogs ? this.createEncryptedFormat(encryptionKey) : format
+      })
+    ];
+
+    return winston.createLogger({
+      level: logLevel,
+      format,
+      transports
     });
   }
 
-  static async handleAsync<T>(
-    promise: Promise<T>,
-    context: string
-  ): Promise<[T | null, Error | null]> {
-    try {
-      const result = await promise;
-      return [result, null];
-    } catch (error) {
-      this.handle(error as Error, context);
-      return [null, error as Error];
-    }
+  private createEncryptedFormat(encryptionKey: string): winston.Logform.Format {
+    return winston.format.combine(
+      winston.format.timestamp(),
+      winston.format.printf(info => {
+        const message = `[${info.timestamp}] [${info.level}]: ${info.message}`;
+        return encrypt(message, encryptionKey);
+      })
+    );
   }
 
-  static wrapHandler<T extends (...args: any[]) => Promise<any>>(
-    handler: T,
-    context: string
-  ): T {
-    return (async (...args: Parameters<T>) => {
-      try {
-        return await handler(...args);
-      } catch (error) {
-        this.handle(error as Error, context);
-        throw error;
-      }
-    }) as T;
+  debug(message: string, ...meta: any[]): void {
+    this.logger.debug(message, ...meta);
   }
-}
 
-// Export default logger instance
-export default logger; 
+  info(message: string, ...meta: any[]): void {
+    this.logger.info(message, ...meta);
+  }
+
+  warn(message: string, ...meta: any[]): void {
+    this.logger.warn(message, ...meta);
+  }
+
+  error(message: string, ...meta: any[]): void {
+    this.logger.error(message, ...meta);
+  }
+
+  // Utility methods
+  startTimer(): () => number {
+    const start = process.hrtime();
+    return () => {
+      const [seconds, nanoseconds] = process.hrtime(start);
+      return seconds * 1000 + nanoseconds / 1000000;
+    };
+  }
+
+  profile(id: string): void {
+    this.logger.profile(id);
+  }
+
+  static flush(): Promise<void> {
+    const promises = Array.from(Logger.instances.values()).map(
+      logger => new Promise<void>((resolve) => {
+        logger.logger.on('finish', resolve);
+        logger.logger.end();
+      })
+    );
+    return Promise.all(promises).then(() => {});
+  }
+} 

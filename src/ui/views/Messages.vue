@@ -1,106 +1,129 @@
 <template>
-  <div>
+  <v-container fluid>
+    <!-- Message Composition -->
     <v-row>
-      <!-- Message Filters -->
-      <v-col cols="12">
+      <v-col cols="12" lg="4">
         <v-card>
+          <v-card-title>
+            New Message
+            <v-spacer></v-spacer>
+            <v-btn
+              color="primary"
+              :loading="sending"
+              :disabled="!isValidMessage"
+              @click="sendMessage"
+            >
+              Send
+            </v-btn>
+          </v-card-title>
           <v-card-text>
-            <v-row align="center">
-              <v-col cols="auto">
-                <v-select
-                  v-model="filter.status"
-                  :items="statusFilters"
-                  label="Status"
-                  clearable
-                  hide-details
-                />
-              </v-col>
-              <v-col cols="auto">
-                <v-select
-                  v-model="filter.modem"
-                  :items="modemFilters"
-                  label="Modem"
-                  clearable
-                  hide-details
-                />
-              </v-col>
-              <v-col>
-                <v-text-field
-                  v-model="filter.search"
-                  append-icon="mdi-magnify"
-                  label="Search messages"
-                  hide-details
-                />
-              </v-col>
-              <v-col cols="auto">
-                <v-btn-group>
-                  <v-btn
-                    prepend-icon="mdi-refresh"
-                    :loading="loading"
-                    @click="loadMessages"
-                  >
-                    Refresh
-                  </v-btn>
-                  <v-btn
-                    prepend-icon="mdi-export"
-                    @click="exportMessages"
-                  >
-                    Export
-                  </v-btn>
-                </v-btn-group>
-              </v-col>
-            </v-row>
+            <v-form ref="messageForm">
+              <v-select
+                v-model="newMessage.modemId"
+                :items="availableModems"
+                item-text="label"
+                item-value="id"
+                label="Select Modem"
+                :rules="[v => !!v || 'Modem is required']"
+              ></v-select>
+
+              <v-text-field
+                v-model="newMessage.recipient"
+                label="Recipient Number"
+                :rules="[
+                  v => !!v || 'Number is required',
+                  v => /^\+?[\d-]+$/.test(v) || 'Invalid phone number'
+                ]"
+              ></v-text-field>
+
+              <v-textarea
+                v-model="newMessage.message"
+                label="Message"
+                counter
+                maxlength="160"
+                :rules="[
+                  v => !!v || 'Message is required',
+                  v => v.length <= 160 || 'Message too long'
+                ]"
+              ></v-textarea>
+
+              <v-select
+                v-model="newMessage.priority"
+                :items="priorityOptions"
+                label="Priority"
+              ></v-select>
+            </v-form>
           </v-card-text>
         </v-card>
       </v-col>
 
-      <!-- Message Table -->
-      <v-col cols="12">
+      <!-- Message Queue -->
+      <v-col cols="12" lg="8">
         <v-card>
+          <v-card-title>
+            Message Queue
+            <v-spacer></v-spacer>
+            <v-text-field
+              v-model="search"
+              append-icon="mdi-magnify"
+              label="Search"
+              single-line
+              hide-details
+              class="mx-4"
+            ></v-text-field>
+            <v-btn-toggle v-model="timeRange" mandatory>
+              <v-btn value="1h">1h</v-btn>
+              <v-btn value="24h">24h</v-btn>
+              <v-btn value="7d">7d</v-btn>
+              <v-btn value="30d">30d</v-btn>
+            </v-btn-toggle>
+          </v-card-title>
+
           <v-data-table
             :headers="headers"
-            :items="filteredMessages"
+            :items="messages"
+            :search="search"
             :loading="loading"
-            :items-per-page="25"
+            :items-per-page="15"
+            :footer-props="{
+              'items-per-page-options': [15, 30, 50, 100]
+            }"
           >
+            <!-- Status Column -->
             <template v-slot:item.status="{ item }">
-              <v-chip
-                :color="getStatusColor(item.raw.status)"
-                size="small"
-              >
-                {{ item.raw.status }}
+              <v-chip :color="getStatusColor(item.status)" small>
+                {{ item.status }}
               </v-chip>
             </template>
 
+            <!-- Timestamp Column -->
             <template v-slot:item.timestamp="{ item }">
-              {{ formatDate(item.raw.timestamp) }}
+              {{ formatDate(item.timestamp) }}
             </template>
 
+            <!-- Actions Column -->
             <template v-slot:item.actions="{ item }">
               <v-btn
                 icon
-                size="small"
-                @click="showMessageDetails(item.raw)"
-                title="View Details"
-              >
-                <v-icon>mdi-information</v-icon>
-              </v-btn>
-              <v-btn
-                v-if="item.raw.status === 'failed'"
-                icon
-                size="small"
-                color="warning"
-                @click="retryMessage(item.raw)"
-                title="Retry"
+                small
+                @click="resendMessage(item)"
+                :disabled="!canResend(item)"
+                :loading="item.resending"
               >
                 <v-icon>mdi-refresh</v-icon>
               </v-btn>
               <v-btn
                 icon
-                size="small"
-                color="error"
-                @click="deleteMessage(item.raw)"
-                title="Delete"
+                small
+                @click="showMessageDetails(item)"
+              >
+                <v-icon>mdi-information</v-icon>
+              </v-btn>
+              <v-btn
+                icon
+                small
+                @click="deleteMessage(item)"
+                :disabled="item.deleting"
               >
                 <v-icon>mdi-delete</v-icon>
               </v-btn>
@@ -111,225 +134,136 @@
     </v-row>
 
     <!-- Message Details Dialog -->
-    <v-dialog v-model="detailsDialog" max-width="600px">
-      <v-card v-if="selectedMessage">
+    <v-dialog v-model="detailDialog" max-width="600px">
+      <v-card>
         <v-card-title>
           Message Details
-          <v-spacer />
-          <v-btn icon @click="detailsDialog = false">
+          <v-spacer></v-spacer>
+          <v-btn icon @click="detailDialog = false">
             <v-icon>mdi-close</v-icon>
           </v-btn>
         </v-card-title>
-
         <v-card-text>
-          <v-list>
+          <v-list dense>
             <v-list-item>
-              <v-list-item-title>Sender</v-list-item-title>
-              <v-list-item-subtitle>{{ selectedMessage.sender }}</v-list-item-subtitle>
+              <v-list-item-content>
+                <v-list-item-title>Modem</v-list-item-title>
+                <v-list-item-subtitle>{{ selectedMessage?.modemId }}</v-list-item-subtitle>
+              </v-list-item-content>
             </v-list-item>
+
             <v-list-item>
-              <v-list-item-title>Modem</v-list-item-title>
-              <v-list-item-subtitle>
-                {{ getModemInfo(selectedMessage.modemId) }}
-              </v-list-item-subtitle>
+              <v-list-item-content>
+                <v-list-item-title>Recipient</v-list-item-title>
+                <v-list-item-subtitle>{{ selectedMessage?.recipient }}</v-list-item-subtitle>
+              </v-list-item-content>
             </v-list-item>
+
             <v-list-item>
-              <v-list-item-title>Received At</v-list-item-title>
-              <v-list-item-subtitle>
-                {{ formatDate(selectedMessage.timestamp) }}
-              </v-list-item-subtitle>
+              <v-list-item-content>
+                <v-list-item-title>Message</v-list-item-title>
+                <v-list-item-subtitle>{{ selectedMessage?.message }}</v-list-item-subtitle>
+              </v-list-item-content>
             </v-list-item>
+
             <v-list-item>
-              <v-list-item-title>Status</v-list-item-title>
-              <v-list-item-subtitle>
-                <v-chip
-                  :color="getStatusColor(selectedMessage.status)"
-                  size="small"
-                >
-                  {{ selectedMessage.status }}
-                </v-chip>
-                <span v-if="selectedMessage.error" class="text-error ml-2">
+              <v-list-item-content>
+                <v-list-item-title>Status</v-list-item-title>
+                <v-list-item-subtitle>
+                  <v-chip :color="getStatusColor(selectedMessage?.status)" small>
+                    {{ selectedMessage?.status }}
+                  </v-chip>
+                </v-list-item-subtitle>
+              </v-list-item-content>
+            </v-list-item>
+
+            <v-list-item v-if="selectedMessage?.error">
+              <v-list-item-content>
+                <v-list-item-title>Error</v-list-item-title>
+                <v-list-item-subtitle class="error--text">
                   {{ selectedMessage.error }}
-                </span>
-              </v-list-item-subtitle>
+                </v-list-item-subtitle>
+              </v-list-item-content>
             </v-list-item>
+
             <v-list-item>
-              <v-list-item-title>Message</v-list-item-title>
-              <v-list-item-subtitle class="mt-2 text-pre-wrap">
-                {{ selectedMessage.message }}
-              </v-list-item-subtitle>
+              <v-list-item-content>
+                <v-list-item-title>Timestamp</v-list-item-title>
+                <v-list-item-subtitle>
+                  {{ formatDate(selectedMessage?.timestamp) }}
+                </v-list-item-subtitle>
+              </v-list-item-content>
             </v-list-item>
           </v-list>
         </v-card-text>
-
-        <v-card-actions>
-          <v-spacer />
-          <v-btn
-            v-if="selectedMessage.status === 'failed'"
-            color="warning"
-            @click="retryMessage(selectedMessage)"
-          >
-            Retry
-          </v-btn>
-          <v-btn
-            color="error"
-            @click="deleteMessage(selectedMessage)"
-          >
-            Delete
-          </v-btn>
-        </v-card-actions>
       </v-card>
     </v-dialog>
-
-    <!-- Delete Confirmation Dialog -->
-    <v-dialog v-model="deleteDialog" max-width="400px">
-      <v-card>
-        <v-card-title>Confirm Delete</v-card-title>
-        <v-card-text>
-          Are you sure you want to delete this message? This action cannot be undone.
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn
-            color="grey"
-            variant="text"
-            @click="deleteDialog = false"
-          >
-            Cancel
-          </v-btn>
-          <v-btn
-            color="error"
-            :loading="deleting"
-            @click="confirmDelete"
-          >
-            Delete
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <!-- Export Dialog -->
-    <v-dialog v-model="exportDialog" max-width="400px">
-      <v-card>
-        <v-card-title>Export Messages</v-card-title>
-        <v-card-text>
-          <v-select
-            v-model="exportFormat"
-            :items="exportFormats"
-            label="Format"
-          />
-          <v-select
-            v-model="exportRange"
-            :items="exportRanges"
-            label="Time Range"
-          />
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn
-            color="grey"
-            variant="text"
-            @click="exportDialog = false"
-          >
-            Cancel
-          </v-btn>
-          <v-btn
-            color="primary"
-            :loading="exporting"
-            @click="confirmExport"
-          >
-            Export
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-  </div>
+  </v-container>
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, computed, onMounted } from 'vue';
-import { useStore } from 'vuex';
+import { defineComponent, ref, computed, onMounted, watch } from 'vue';
+import { format } from 'date-fns';
 
 export default defineComponent({
   name: 'Messages',
 
   setup() {
-    const store = useStore();
+    // State
     const loading = ref(false);
-    const deleting = ref(false);
-    const exporting = ref(false);
-    const detailsDialog = ref(false);
-    const deleteDialog = ref(false);
-    const exportDialog = ref(false);
+    const sending = ref(false);
+    const search = ref('');
+    const timeRange = ref('24h');
+    const messages = ref([]);
+    const detailDialog = ref(false);
     const selectedMessage = ref<any>(null);
+    const messageForm = ref<any>(null);
 
-    const filter = ref({
-      status: '',
-      modem: '',
-      search: ''
+    const newMessage = ref({
+      modemId: '',
+      recipient: '',
+      message: '',
+      priority: 'normal'
     });
 
-    const exportFormat = ref('csv');
-    const exportRange = ref('24h');
-
-    const messages = computed(() => store.state.messages);
-    const modems = computed(() => store.state.modems);
+    // Options
+    const priorityOptions = [
+      { text: 'High', value: 'high' },
+      { text: 'Normal', value: 'normal' },
+      { text: 'Low', value: 'low' }
+    ];
 
     const headers = [
-      { title: 'Sender', key: 'sender' },
-      { title: 'Message', key: 'message' },
-      { title: 'Modem', key: 'modemId' },
-      { title: 'Received', key: 'timestamp' },
-      { title: 'Status', key: 'status' },
-      { title: 'Actions', key: 'actions', sortable: false }
+      { text: 'Modem', value: 'modemId' },
+      { text: 'Recipient', value: 'recipient' },
+      { text: 'Message', value: 'message' },
+      { text: 'Status', value: 'status' },
+      { text: 'Time', value: 'timestamp' },
+      { text: 'Actions', value: 'actions', sortable: false }
     ];
 
-    const statusFilters = [
-      { title: 'All', value: '' },
-      { title: 'Received', value: 'received' },
-      { title: 'Sent', value: 'sent' },
-      { title: 'Pending', value: 'pending' },
-      { title: 'Failed', value: 'failed' }
-    ];
-
-    const modemFilters = computed(() => [
-      { title: 'All', value: '' },
-      ...modems.value.map((m: any) => ({
-        title: `${m.model} (${m.imei})`,
-        value: m.id
-      }))
-    ]);
-
-    const exportFormats = [
-      { title: 'CSV', value: 'csv' },
-      { title: 'Excel', value: 'xlsx' },
-      { title: 'PDF', value: 'pdf' }
-    ];
-
-    const exportRanges = [
-      { title: 'Last 24 Hours', value: '24h' },
-      { title: 'Last 7 Days', value: '7d' },
-      { title: 'Last 30 Days', value: '30d' },
-      { title: 'All Time', value: 'all' }
-    ];
-
-    const filteredMessages = computed(() => {
-      return messages.value.filter((m: any) => {
-        if (filter.value.status && m.status !== filter.value.status) return false;
-        if (filter.value.modem && m.modemId !== filter.value.modem) return false;
-        if (filter.value.search) {
-          const search = filter.value.search.toLowerCase();
-          return m.sender.toLowerCase().includes(search) ||
-                 m.message.toLowerCase().includes(search);
-        }
-        return true;
-      });
+    // Computed
+    const isValidMessage = computed(() => {
+      return (
+        newMessage.value.modemId &&
+        /^\+?[\d-]+$/.test(newMessage.value.recipient) &&
+        newMessage.value.message &&
+        newMessage.value.message.length <= 160
+      );
     });
 
+    const availableModems = computed(() => {
+      // TODO: Get from store
+      return [];
+    });
+
+    // Methods
     const loadMessages = async () => {
       loading.value = true;
       try {
-        await store.dispatch('loadMessages');
+        messages.value = await window.api.getMessages({
+          timeRange: timeRange.value
+        });
       } catch (error) {
         console.error('Failed to load messages:', error);
       } finally {
@@ -337,119 +271,124 @@ export default defineComponent({
       }
     };
 
-    const showMessageDetails = (message: any) => {
-      selectedMessage.value = message;
-      detailsDialog.value = true;
-    };
+    const sendMessage = async () => {
+      if (!messageForm.value.validate()) return;
 
-    const retryMessage = async (message: any) => {
+      sending.value = true;
       try {
-        await window.api.retryMessage(message.id);
+        await window.api.sendMessage(
+          newMessage.value.modemId,
+          newMessage.value.recipient,
+          newMessage.value.message,
+          { priority: newMessage.value.priority }
+        );
+
+        // Reset form
+        newMessage.value = {
+          modemId: '',
+          recipient: '',
+          message: '',
+          priority: 'normal'
+        };
+        messageForm.value.reset();
+
+        // Refresh messages
         await loadMessages();
       } catch (error) {
-        console.error('Failed to retry message:', error);
+        console.error('Failed to send message:', error);
+      } finally {
+        sending.value = false;
       }
     };
 
-    const deleteMessage = (message: any) => {
-      selectedMessage.value = message;
-      deleteDialog.value = true;
+    const resendMessage = async (message: any) => {
+      message.resending = true;
+      try {
+        await window.api.resendMessage(message.id);
+        await loadMessages();
+      } catch (error) {
+        console.error('Failed to resend message:', error);
+      } finally {
+        message.resending = false;
+      }
     };
 
-    const confirmDelete = async () => {
-      if (!selectedMessage.value) return;
+    const deleteMessage = async (message: any) => {
+      if (!confirm('Are you sure you want to delete this message?')) {
+        return;
+      }
 
-      deleting.value = true;
+      message.deleting = true;
       try {
-        await window.api.deleteMessage(selectedMessage.value.id);
-        deleteDialog.value = false;
-        detailsDialog.value = false;
+        await window.api.deleteMessage(message.id);
         await loadMessages();
       } catch (error) {
         console.error('Failed to delete message:', error);
-      } finally {
-        deleting.value = false;
       }
     };
 
-    const exportMessages = () => {
-      exportDialog.value = true;
+    const showMessageDetails = (message: any) => {
+      selectedMessage.value = message;
+      detailDialog.value = true;
     };
 
-    const confirmExport = async () => {
-      exporting.value = true;
-      try {
-        const url = await window.api.exportMessages(exportRange.value, exportFormat.value);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `messages_${exportRange.value}.${exportFormat.value}`;
-        link.click();
-        exportDialog.value = false;
-      } catch (error) {
-        console.error('Failed to export messages:', error);
-      } finally {
-        exporting.value = false;
-      }
-    };
-
+    // Utility functions
     const getStatusColor = (status: string): string => {
-      switch (status) {
-        case 'received': return 'success';
-        case 'sent': return 'info';
-        case 'pending': return 'warning';
-        case 'failed': return 'error';
-        default: return 'grey';
-      }
-    };
-
-    const getModemInfo = (modemId: string): string => {
-      const modem = modems.value.find((m: any) => m.id === modemId);
-      return modem ? `${modem.model} (${modem.imei})` : modemId;
+      const colors: Record<string, string> = {
+        sent: 'success',
+        received: 'success',
+        pending: 'warning',
+        failed: 'error'
+      };
+      return colors[status] || 'grey';
     };
 
     const formatDate = (date: string | Date): string => {
-      return new Date(date).toLocaleString();
+      return format(new Date(date), 'MMM d, HH:mm:ss');
     };
 
+    const canResend = (message: any): boolean => {
+      return message.status === 'failed';
+    };
+
+    // Watch for time range changes
+    watch(timeRange, () => {
+      loadMessages();
+    });
+
+    // Initial load
     onMounted(() => {
       loadMessages();
     });
 
     return {
       loading,
-      deleting,
-      exporting,
+      sending,
+      search,
+      timeRange,
       messages,
-      filteredMessages,
-      headers,
-      filter,
-      statusFilters,
-      modemFilters,
-      detailsDialog,
-      deleteDialog,
-      exportDialog,
+      newMessage,
+      detailDialog,
       selectedMessage,
-      exportFormat,
-      exportRange,
-      exportFormats,
-      exportRanges,
-      loadMessages,
-      showMessageDetails,
-      retryMessage,
+      messageForm,
+      priorityOptions,
+      headers,
+      availableModems,
+      isValidMessage,
+      sendMessage,
+      resendMessage,
       deleteMessage,
-      confirmDelete,
-      exportMessages,
-      confirmExport,
+      showMessageDetails,
       getStatusColor,
-      getModemInfo,
-      formatDate
+      formatDate,
+      canResend
     };
   }
 });
 </script>
 
 <style scoped>
-.text-pre-wrap {
-  white-space: pre-wrap;
+.v-card {
+  margin-bottom: 16px;
 }
 </style> 

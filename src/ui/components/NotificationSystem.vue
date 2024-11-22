@@ -1,76 +1,55 @@
 <template>
-  <div>
-    <!-- Global Snackbar -->
+  <div class="notification-system">
+    <!-- Toast Notifications -->
     <v-snackbar
       v-model="snackbar.show"
       :color="snackbar.color"
       :timeout="snackbar.timeout"
-      :location="snackbar.location"
       :multi-line="snackbar.multiLine"
+      top
+      right
     >
-      <div class="d-flex align-center">
-        <v-icon
-          :icon="getIcon(snackbar.type)"
-          class="mr-2"
-          size="20"
-        />
-        <div>
-          <div v-if="snackbar.title" class="text-subtitle-2 font-weight-bold">
-            {{ snackbar.title }}
-          </div>
-          <div>{{ snackbar.text }}</div>
-        </div>
-      </div>
+      {{ snackbar.text }}
 
-      <template v-slot:actions>
+      <template v-slot:action="{ attrs }">
         <v-btn
-          v-if="snackbar.action"
-          variant="text"
-          @click="snackbar.action.handler"
-        >
-          {{ snackbar.action.text }}
-        </v-btn>
-        <v-btn
-          variant="text"
-          @click="closeSnackbar"
+          text
+          v-bind="attrs"
+          @click="snackbar.show = false"
         >
           Close
         </v-btn>
       </template>
     </v-snackbar>
 
-    <!-- Error Dialog for Critical Errors -->
+    <!-- Alert Dialog -->
     <v-dialog
-      v-model="errorDialog.show"
+      v-model="dialog.show"
       max-width="500px"
       persistent
     >
       <v-card>
-        <v-card-title class="bg-error text-white">
-          <v-icon icon="mdi-alert-circle" class="mr-2" />
-          System Error
+        <v-card-title :class="dialog.color + '--text'">
+          {{ dialog.title }}
         </v-card-title>
-        <v-card-text class="pt-4">
-          <p class="text-body-1">{{ errorDialog.message }}</p>
-          <p v-if="errorDialog.details" class="text-caption mt-2">
-            {{ errorDialog.details }}
-          </p>
+
+        <v-card-text>
+          {{ dialog.message }}
         </v-card-text>
+
         <v-card-actions>
-          <v-spacer />
+          <v-spacer></v-spacer>
           <v-btn
-            color="error"
-            variant="text"
-            @click="closeErrorDialog"
+            text
+            @click="handleDialogAction(false)"
           >
-            Close
+            {{ dialog.cancelText }}
           </v-btn>
           <v-btn
-            v-if="errorDialog.retry"
-            color="primary"
-            @click="retryError"
+            :color="dialog.color"
+            @click="handleDialogAction(true)"
           >
-            Retry
+            {{ dialog.confirmText }}
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -79,144 +58,169 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, provide } from 'vue';
+import { defineComponent, reactive, onMounted, onUnmounted } from 'vue';
 
 interface SnackbarState {
   show: boolean;
   text: string;
-  title?: string;
   color: string;
   timeout: number;
-  location?: 'top' | 'bottom';
   multiLine: boolean;
-  type: 'success' | 'error' | 'warning' | 'info';
-  action?: {
-    text: string;
-    handler: () => void;
-  };
 }
 
-interface ErrorDialogState {
+interface DialogState {
   show: boolean;
+  title: string;
   message: string;
-  details?: string;
-  retry?: () => Promise<void>;
+  color: string;
+  confirmText: string;
+  cancelText: string;
+  resolve?: (value: boolean) => void;
 }
 
 export default defineComponent({
   name: 'NotificationSystem',
 
   setup() {
-    const snackbar = ref<SnackbarState>({
+    const snackbar = reactive<SnackbarState>({
       show: false,
       text: '',
-      color: 'success',
+      color: 'info',
       timeout: 5000,
-      location: 'bottom',
-      multiLine: false,
-      type: 'success'
+      multiLine: false
     });
 
-    const errorDialog = ref<ErrorDialogState>({
+    const dialog = reactive<DialogState>({
       show: false,
-      message: ''
+      title: '',
+      message: '',
+      color: 'primary',
+      confirmText: 'Confirm',
+      cancelText: 'Cancel'
     });
 
-    const showNotification = (options: {
-      text: string;
-      title?: string;
-      type?: 'success' | 'error' | 'warning' | 'info';
-      timeout?: number;
-      location?: 'top' | 'bottom';
-      action?: {
-        text: string;
-        handler: () => void;
-      };
-    }) => {
-      const colorMap = {
-        success: 'success',
-        error: 'error',
-        warning: 'warning',
-        info: 'info'
-      };
-
-      snackbar.value = {
-        show: true,
-        text: options.text,
-        title: options.title,
-        color: colorMap[options.type || 'success'],
-        timeout: options.timeout || 5000,
-        location: options.location || 'bottom',
-        multiLine: !!options.title,
-        type: options.type || 'success',
-        action: options.action
-      };
+    const showNotification = (
+      text: string,
+      options: {
+        color?: string;
+        timeout?: number;
+        multiLine?: boolean;
+      } = {}
+    ) => {
+      snackbar.text = text;
+      snackbar.color = options.color || 'info';
+      snackbar.timeout = options.timeout || 5000;
+      snackbar.multiLine = options.multiLine || false;
+      snackbar.show = true;
     };
 
-    const showError = (options: {
-      message: string;
-      details?: string;
-      retry?: () => Promise<void>;
-    }) => {
-      errorDialog.value = {
-        show: true,
-        message: options.message,
-        details: options.details,
-        retry: options.retry
-      };
+    const showConfirmation = (
+      title: string,
+      message: string,
+      options: {
+        color?: string;
+        confirmText?: string;
+        cancelText?: string;
+      } = {}
+    ): Promise<boolean> => {
+      return new Promise((resolve) => {
+        dialog.title = title;
+        dialog.message = message;
+        dialog.color = options.color || 'primary';
+        dialog.confirmText = options.confirmText || 'Confirm';
+        dialog.cancelText = options.cancelText || 'Cancel';
+        dialog.resolve = resolve;
+        dialog.show = true;
+      });
     };
 
-    const closeSnackbar = () => {
-      snackbar.value.show = false;
+    const handleDialogAction = (confirmed: boolean) => {
+      dialog.show = false;
+      dialog.resolve?.(confirmed);
     };
 
-    const closeErrorDialog = () => {
-      errorDialog.value.show = false;
-    };
-
-    const retryError = async () => {
-      if (errorDialog.value.retry) {
-        try {
-          await errorDialog.value.retry();
-          errorDialog.value.show = false;
-        } catch (error) {
-          console.error('Retry failed:', error);
-        }
+    // Event handlers
+    const handleModemEvent = (event: any) => {
+      switch (event.type) {
+        case 'modem:connected':
+          showNotification(`Modem ${event.id} connected`, { color: 'success' });
+          break;
+        case 'modem:disconnected':
+          showNotification(`Modem ${event.id} disconnected`, { color: 'warning' });
+          break;
+        case 'modem:error':
+          showNotification(`Modem error: ${event.error}`, { 
+            color: 'error',
+            multiLine: true,
+            timeout: 10000
+          });
+          break;
       }
     };
 
-    const getIcon = (type: string): string => {
-      const iconMap: Record<string, string> = {
-        success: 'mdi-check-circle',
-        error: 'mdi-alert-circle',
-        warning: 'mdi-alert',
-        info: 'mdi-information'
-      };
-      return iconMap[type] || 'mdi-information';
+    const handlePluginEvent = (event: any) => {
+      switch (event.type) {
+        case 'plugin:installed':
+          showNotification(`Plugin ${event.name} installed`, { color: 'success' });
+          break;
+        case 'plugin:uninstalled':
+          showNotification(`Plugin ${event.name} uninstalled`, { color: 'info' });
+          break;
+        case 'plugin:error':
+          showNotification(`Plugin error: ${event.error}`, { 
+            color: 'error',
+            multiLine: true
+          });
+          break;
+      }
     };
 
-    // Provide notification methods to child components
-    provide('notifications', {
-      showNotification,
-      showError
+    const handleSystemEvent = (event: any) => {
+      switch (event.type) {
+        case 'system:error':
+          showNotification(`System error: ${event.error}`, {
+            color: 'error',
+            multiLine: true,
+            timeout: 0
+          });
+          break;
+        case 'update:available':
+          showNotification('Update available', {
+            color: 'info',
+            timeout: 0
+          });
+          break;
+      }
+    };
+
+    // Setup event listeners
+    onMounted(() => {
+      window.api.on('modem:event', handleModemEvent);
+      window.api.on('plugin:event', handlePluginEvent);
+      window.api.on('system:event', handleSystemEvent);
+    });
+
+    // Cleanup
+    onUnmounted(() => {
+      window.api.off('modem:event', handleModemEvent);
+      window.api.off('plugin:event', handlePluginEvent);
+      window.api.off('system:event', handleSystemEvent);
     });
 
     return {
       snackbar,
-      errorDialog,
-      closeSnackbar,
-      closeErrorDialog,
-      retryError,
-      getIcon
+      dialog,
+      showNotification,
+      showConfirmation,
+      handleDialogAction
     };
   }
 });
 </script>
 
 <style scoped>
-.v-snackbar {
-  .v-snackbar__content {
-    padding: 12px;
-  }
+.notification-system {
+  position: fixed;
+  z-index: 9999;
 }
 </style> 

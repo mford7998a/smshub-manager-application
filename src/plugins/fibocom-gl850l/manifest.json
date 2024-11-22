@@ -1,0 +1,58 @@
+{
+  "name": "fibocom-gl850l",
+  "version": "1.0.0",
+  "author": "SMSHub",
+  "description": "Support for Fibocom GL850L LTE modem",
+  "main": "index.js",
+  "supportedModems": [
+    {
+      "vendor": "Fibocom",
+      "models": ["GL850L", "GL850L-CN", "GL850L-EU"]
+    }
+  ],
+  "dependencies": [],
+  "minAppVersion": "1.0.0",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "commandTimeout": {
+        "type": "number",
+        "default": 10000,
+        "description": "AT command timeout in milliseconds"
+      },
+      "maxRetries": {
+        "type": "number",
+        "default": 3,
+        "description": "Maximum command retry attempts"
+      },
+      "apn": {
+        "type": "string",
+        "default": "internet",
+        "description": "APN for data connection"
+      },
+      "pinCode": {
+        "type": "string",
+        "default": "",
+        "description": "SIM PIN code if required"
+      },
+      "preferredMode": {
+        "type": "string",
+        "enum": ["auto", "4g", "3g", "2g"],
+        "default": "auto",
+        "description": "Preferred network mode"
+      },
+      "signalCheckInterval": {
+        "type": "number",
+        "default": 30000,
+        "description": "Signal strength check interval"
+      }
+    }
+  },
+  "capabilities": {
+    "ussd": true,
+    "customCommands": true,
+    "networkSelection": true,
+    "signalMonitoring": true,
+    "autoFlash": false
+  }
+} 

@@ -1,129 +1,187 @@
 <template>
-  <v-dialog v-model="dialog" max-width="800px">
+  <v-dialog
+    v-model="show"
+    max-width="800px"
+  >
     <v-card>
       <v-card-title>
         Settings
-        <v-spacer />
-        <v-btn icon @click="close">
+        <v-spacer></v-spacer>
+        <v-btn
+          icon
+          @click="show = false"
+        >
           <v-icon>mdi-close</v-icon>
         </v-btn>
       </v-card-title>
 
       <v-card-text>
-        <v-form ref="form" v-model="valid">
-          <!-- API Configuration -->
-          <v-card variant="outlined" class="mb-4">
-            <v-card-title>API Configuration</v-card-title>
-            <v-card-text>
-              <v-text-field
-                v-model="config.smshub.baseUrl"
-                label="API Base URL"
-                :rules="[v => !!v || 'Base URL is required']"
-                required
-              />
-              <v-text-field
-                v-model="config.smshub.apiKey"
-                label="API Key"
-                :rules="[v => !!v || 'API Key is required']"
-                required
-                type="password"
-              />
-              <v-text-field
-                v-model.number="config.smshub.timeout"
-                label="API Timeout (ms)"
-                type="number"
-                min="1000"
-                max="60000"
-              />
-            </v-card-text>
-          </v-card>
+        <v-tabs v-model="activeTab">
+          <v-tab>General</v-tab>
+          <v-tab>API</v-tab>
+          <v-tab>Modems</v-tab>
+          <v-tab>Plugins</v-tab>
+          <v-tab>Advanced</v-tab>
+        </v-tabs>
 
-          <!-- Plugin Settings -->
-          <v-card variant="outlined" class="mb-4">
-            <v-card-title>Plugin Settings</v-card-title>
-            <v-card-text>
-              <v-switch
-                v-model="config.plugins.autoload"
-                label="Automatically load plugins on startup"
-              />
-              <v-text-field
-                v-model="config.plugins.directory"
-                label="Plugin Directory"
-                :rules="[v => !!v || 'Plugin directory is required']"
-                required
-              />
-            </v-card-text>
-          </v-card>
+        <v-tabs-items v-model="activeTab">
+          <!-- General Settings -->
+          <v-tab-item>
+            <v-card flat>
+              <v-card-text>
+                <v-form ref="generalForm">
+                  <v-switch
+                    v-model="settings.general.autoStart"
+                    label="Start on system boot"
+                  ></v-switch>
+                  <v-switch
+                    v-model="settings.general.minimizeToTray"
+                    label="Minimize to system tray"
+                  ></v-switch>
+                  <v-select
+                    v-model="settings.general.theme"
+                    :items="themeOptions"
+                    label="Theme"
+                  ></v-select>
+                  <v-select
+                    v-model="settings.general.language"
+                    :items="languageOptions"
+                    label="Language"
+                  ></v-select>
+                </v-form>
+              </v-card-text>
+            </v-card>
+          </v-tab-item>
 
-          <!-- Logging Settings -->
-          <v-card variant="outlined" class="mb-4">
-            <v-card-title>Logging</v-card-title>
-            <v-card-text>
-              <v-select
-                v-model="config.logging.level"
-                :items="logLevels"
-                label="Log Level"
-              />
-              <v-text-field
-                v-model.number="config.logging.maxFiles"
-                label="Max Log Files"
-                type="number"
-                min="1"
-                max="20"
-              />
-              <v-text-field
-                v-model.number="config.logging.maxSize"
-                label="Max Log Size (MB)"
-                type="number"
-                min="1"
-                max="100"
-              />
-            </v-card-text>
-          </v-card>
+          <!-- API Settings -->
+          <v-tab-item>
+            <v-card flat>
+              <v-card-text>
+                <v-form ref="apiForm">
+                  <v-text-field
+                    v-model="settings.api.baseUrl"
+                    label="API Base URL"
+                    required
+                  ></v-text-field>
+                  <v-text-field
+                    v-model="settings.api.apiKey"
+                    label="API Key"
+                    type="password"
+                    required
+                  ></v-text-field>
+                  <v-slider
+                    v-model="settings.api.timeout"
+                    label="API Timeout (seconds)"
+                    min="5"
+                    max="60"
+                    thumb-label
+                  ></v-slider>
+                </v-form>
+              </v-card-text>
+            </v-card>
+          </v-tab-item>
 
           <!-- Modem Settings -->
-          <v-card variant="outlined">
-            <v-card-title>Modem Settings</v-card-title>
-            <v-card-text>
-              <v-text-field
-                v-model.number="config.modem.defaultBaudRate"
-                label="Default Baud Rate"
-                type="number"
-                :items="baudRates"
-              />
-              <v-text-field
-                v-model.number="config.modem.commandTimeout"
-                label="Command Timeout (ms)"
-                type="number"
-                min="1000"
-                max="30000"
-              />
-              <v-text-field
-                v-model.number="config.modem.reconnectDelay"
-                label="Reconnect Delay (ms)"
-                type="number"
-                min="1000"
-                max="30000"
-              />
-            </v-card-text>
-          </v-card>
-        </v-form>
+          <v-tab-item>
+            <v-card flat>
+              <v-card-text>
+                <v-form ref="modemForm">
+                  <v-slider
+                    v-model="settings.modem.commandTimeout"
+                    label="Command Timeout (seconds)"
+                    min="1"
+                    max="30"
+                    thumb-label
+                  ></v-slider>
+                  <v-slider
+                    v-model="settings.modem.maxRetries"
+                    label="Max Command Retries"
+                    min="0"
+                    max="5"
+                    thumb-label
+                  ></v-slider>
+                  <v-slider
+                    v-model="settings.modem.signalCheckInterval"
+                    label="Signal Check Interval (seconds)"
+                    min="10"
+                    max="300"
+                    thumb-label
+                  ></v-slider>
+                </v-form>
+              </v-card-text>
+            </v-card>
+          </v-tab-item>
+
+          <!-- Plugin Settings -->
+          <v-tab-item>
+            <v-card flat>
+              <v-card-text>
+                <v-form ref="pluginForm">
+                  <v-switch
+                    v-model="settings.plugins.autoload"
+                    label="Auto-load plugins on startup"
+                  ></v-switch>
+                  <v-switch
+                    v-model="settings.plugins.verifySignatures"
+                    label="Verify plugin signatures"
+                  ></v-switch>
+                </v-form>
+              </v-card-text>
+            </v-card>
+          </v-tab-item>
+
+          <!-- Advanced Settings -->
+          <v-tab-item>
+            <v-card flat>
+              <v-card-text>
+                <v-form ref="advancedForm">
+                  <v-select
+                    v-model="settings.logging.level"
+                    :items="logLevelOptions"
+                    label="Log Level"
+                  ></v-select>
+                  <v-text-field
+                    v-model.number="settings.logging.maxFiles"
+                    label="Max Log Files"
+                    type="number"
+                    min="1"
+                    max="20"
+                  ></v-text-field>
+                  <v-text-field
+                    v-model.number="settings.logging.maxSize"
+                    label="Max Log Size (MB)"
+                    type="number"
+                    min="1"
+                    max="100"
+                  ></v-text-field>
+                </v-form>
+              </v-card-text>
+            </v-card>
+          </v-tab-item>
+        </v-tabs-items>
       </v-card-text>
 
+      <v-divider></v-divider>
+
       <v-card-actions>
-        <v-spacer />
         <v-btn
+          text
           color="error"
-          variant="text"
-          @click="close"
+          @click="resetSettings"
+        >
+          Reset to Default
+        </v-btn>
+        <v-spacer></v-spacer>
+        <v-btn
+          text
+          @click="show = false"
         >
           Cancel
         </v-btn>
         <v-btn
           color="primary"
+          @click="saveSettings"
           :loading="saving"
-          :disabled="!valid"
-          @click="save"
         >
           Save
         </v-btn>
@@ -133,112 +191,97 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, watch } from 'vue';
+import { defineComponent, ref, reactive } from 'vue';
+import { useStore } from 'vuex';
 
 export default defineComponent({
   name: 'SettingsDialog',
 
-  props: {
-    modelValue: {
-      type: Boolean,
-      required: true
-    },
-    settings: {
-      type: Object,
-      required: true
-    }
-  },
-
-  emits: ['update:modelValue', 'save'],
-
-  setup(props, { emit }) {
-    const dialog = ref(props.modelValue);
-    const valid = ref(false);
+  setup() {
+    const store = useStore();
+    const show = ref(false);
+    const activeTab = ref(0);
     const saving = ref(false);
-    const form = ref<any>(null);
 
-    const config = ref({
-      smshub: {
+    const settings = reactive({
+      general: {
+        autoStart: false,
+        minimizeToTray: true,
+        theme: 'light',
+        language: 'en'
+      },
+      api: {
         baseUrl: '',
         apiKey: '',
-        timeout: 30000
+        timeout: 30
+      },
+      modem: {
+        commandTimeout: 10,
+        maxRetries: 3,
+        signalCheckInterval: 30
       },
       plugins: {
         autoload: true,
-        directory: ''
+        verifySignatures: true
       },
       logging: {
         level: 'info',
         maxFiles: 5,
-        maxSize: 5
-      },
-      modem: {
-        defaultBaudRate: 115200,
-        commandTimeout: 10000,
-        reconnectDelay: 5000
+        maxSize: 10
       }
     });
 
-    const logLevels = [
-      { title: 'Error', value: 'error' },
-      { title: 'Warning', value: 'warn' },
-      { title: 'Info', value: 'info' },
-      { title: 'Debug', value: 'debug' }
+    const themeOptions = [
+      { text: 'Light', value: 'light' },
+      { text: 'Dark', value: 'dark' },
+      { text: 'System', value: 'system' }
     ];
 
-    const baudRates = [
-      9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600
+    const languageOptions = [
+      { text: 'English', value: 'en' },
+      { text: 'Spanish', value: 'es' },
+      { text: 'French', value: 'fr' }
     ];
 
-    watch(() => props.modelValue, (newVal) => {
-      dialog.value = newVal;
-    });
+    const logLevelOptions = [
+      { text: 'Debug', value: 'debug' },
+      { text: 'Info', value: 'info' },
+      { text: 'Warning', value: 'warn' },
+      { text: 'Error', value: 'error' }
+    ];
 
-    watch(dialog, (newVal) => {
-      emit('update:modelValue', newVal);
-      if (!newVal) {
-        resetForm();
-      }
-    });
-
-    watch(() => props.settings, (newVal) => {
-      if (newVal) {
-        config.value = { ...config.value, ...newVal };
-      }
-    }, { immediate: true });
-
-    const resetForm = () => {
-      if (form.value) {
-        form.value.reset();
-      }
-      config.value = { ...props.settings };
+    const loadSettings = async () => {
+      const config = await window.api.getSystemConfig();
+      Object.assign(settings, config);
     };
 
-    const save = async () => {
-      if (!valid.value) return;
-
+    const saveSettings = async () => {
       saving.value = true;
       try {
-        emit('save', config.value);
+        await window.api.saveSystemConfig(settings);
+        show.value = false;
+      } catch (error) {
+        console.error('Failed to save settings:', error);
       } finally {
         saving.value = false;
       }
     };
 
-    const close = () => {
-      dialog.value = false;
+    const resetSettings = async () => {
+      await window.api.resetSystemConfig();
+      await loadSettings();
     };
 
     return {
-      dialog,
-      valid,
+      show,
+      activeTab,
       saving,
-      form,
-      config,
-      logLevels,
-      baudRates,
-      save,
-      close
+      settings,
+      themeOptions,
+      languageOptions,
+      logLevelOptions,
+      saveSettings,
+      resetSettings
     };
   }
 });

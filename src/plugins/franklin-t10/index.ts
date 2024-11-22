@@ -1,205 +1,142 @@
-import { SerialPort } from 'serialport';
-import { ModemPlugin, ModemCapabilities, ModemInfo, ATResponse } from '../../core/plugin-manager/ModemPlugin';
-import { logger } from '../../utils/logger';
+import { BaseModemPlugin } from '../../core/plugin-manager/ModemPlugin';
+import { PluginSDK } from '../../core/plugin-manager/PluginSDK';
+import { Device as USBDevice } from 'usb';
 
-export default class FranklinT10Plugin extends ModemPlugin {
-  get capabilities(): ModemCapabilities {
-    return {
-      supportsUSSD: true,
-      supportsCustomAT: true,
-      maxBaudRate: 921600,
-      supportedBands: [
-        'B1', 'B2', 'B3', 'B4', 'B5', 'B7', 'B8', 'B12', 'B13',
-        'B20', 'B25', 'B26', 'B29', 'B30', 'B41', 'B66', 'B71'
-      ]
-    };
-  }
+class FranklinT10Plugin extends BaseModemPlugin {
+  protected initialized: boolean = false;
+  protected atProcessor: any;
 
-  async initialize(): Promise<boolean> {
+  async initialize(device: USBDevice): Promise<void> {
+    this.device = device;
+    
     try {
-      this.port = new SerialPort({
-        path: this.devicePath,
-        baudRate: 115200,
-        dataBits: 8,
-        stopBits: 1,
-        parity: 'none'
-      });
-
-      this.port.on('data', this.handleData.bind(this));
-      this.port.on('error', this.handleError.bind(this));
-
-      // Initialize modem
-      await this.sendAT('ATZ');
-      await this.sendAT('ATE0'); // Disable echo
-      await this.sendAT('AT+CMEE=2'); // Enable verbose error messages
-      await this.sendAT('AT+CFUN=1'); // Set full functionality
-      await this.sendAT('AT+CREG=2'); // Enable network registration and location info
-      await this.sendAT('AT+CGREG=2'); // Enable GPRS registration and location info
-      await this.sendAT('AT+CEREG=2'); // Enable EPS registration and location info
-
-      // Get modem info
-      const [manufacturer, model, serial, firmware, imei, iccid] = await Promise.all([
-        this.sendAT('AT+CGMI'),
-        this.sendAT('AT+CGMM'),
-        this.sendAT('AT+CGSN'),
-        this.sendAT('AT+CGMR'),
-        this.sendAT('AT+CGSN'),
-        this.sendAT('AT+ICCID')
-      ]);
-
-      this.info = {
-        manufacturer: manufacturer.data.trim(),
-        model: model.data.trim(),
-        serialNumber: serial.data.trim(),
-        firmwareVersion: firmware.data.trim(),
-        imei: imei.data.trim(),
-        iccid: iccid.data.trim(),
-        operator: (await this.sendAT('AT+COPS?')).data.split(',')[2].replace(/"/g, '')
-      };
-
-      // Configure SMS format
-      await this.sendAT('AT+CMGF=1'); // Set text mode
-      await this.sendAT('AT+CNMI=2,1,0,0,0'); // Configure new message indications
-
-      return true;
+      await this.atProcessor.sendCommand(device, 'ATZ');
+      await this.atProcessor.sendCommand(device, 'ATE0');
+      await this.atProcessor.sendCommand(device, 'AT+CMGF=1');
+      
+      this.initialized = true;
+      this.logger.info('Franklin T10 modem initialized');
     } catch (error) {
-      this.handleError(error as Error);
-      return false;
+      this.logger.error('Failed to initialize modem:', error);
+      throw error;
     }
   }
 
   async sendSMS(number: string, message: string): Promise<boolean> {
+    if (!this.initialized) throw new Error('Modem not initialized');
+
     try {
-      await this.sendAT(`AT+CMGS="${number}"`);
-      await this.sendAT(`${message}\x1A`);
+      await this.atProcessor.sendCommand(this.device, `AT+CMGS="${number}"`);
+      await this.atProcessor.sendCommand(this.device, `${message}\x1A`);
       return true;
-    } catch (error) {
-      this.handleError(error as Error);
+    } catch (error: any) {
+      this.logger.error('Failed to send SMS:', error);
       return false;
     }
   }
 
-  async sendAT(command: string): Promise<ATResponse> {
-    return new Promise((resolve, reject) => {
-      if (!this.port || !this.port.isOpen) {
-        reject(new Error('Port not open'));
-        return;
-      }
+  async readSMS(): Promise<any[]> {
+    if (!this.initialized) throw new Error('Modem not initialized');
 
-      let response = '';
-      const timeout = setTimeout(() => {
-        reject(new Error('AT command timeout'));
-      }, 10000);
+    try {
+      const response = await this.atProcessor.sendCommand(this.device, 'AT+CMGL="ALL"');
+      return this.parseSMSResponse(response);
+    } catch (error: any) {
+      this.logger.error('Failed to read SMS:', error);
+      return [];
+    }
+  }
 
-      const dataHandler = (data: Buffer) => {
-        response += data.toString();
-        if (response.includes('OK\r\n') || response.includes('ERROR')) {
-          cleanup();
-          resolve({
-            success: response.includes('OK'),
-            data: response.replace(/^.*\r\n|\r\n.*$/g, '').trim(),
-            error: response.includes('ERROR') ? response : undefined
-          });
+  async getSignalStrength(): Promise<number> {
+    if (!this.initialized) throw new Error('Modem not initialized');
+    return this.atProcessor.getSignalStrength(this.device);
+  }
+
+  async getNetworkInfo(): Promise<{
+    operator: string;
+    technology: string;
+    band?: string;
+    signal?: number;
+  }> {
+    if (!this.initialized) throw new Error('Modem not initialized');
+    return this.atProcessor.getNetworkInfo(this.device);
+  }
+
+  async reset(): Promise<void> {
+    if (!this.device) {
+      throw new Error('Device not initialized');
+    }
+
+    try {
+      await this.atProcessor.sendCommand(this.device, 'AT+CFUN=1,1');
+      this.initialized = false;
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      await this.initialize(this.device);
+    } catch (error: any) {
+      this.logger.error('Failed to reset modem:', error);
+      throw error;
+    }
+  }
+
+  async getStatus(): Promise<{
+    connected: boolean;
+    signalStrength: number;
+    operator?: string;
+    technology?: string;
+    error?: string;
+  }> {
+    try {
+      const signal = await this.getSignalStrength();
+      const network = await this.getNetworkInfo();
+
+      return {
+        connected: this.initialized,
+        signalStrength: signal,
+        operator: network.operator,
+        technology: network.technology
+      };
+    } catch (error: any) {
+      return {
+        connected: false,
+        signalStrength: 0,
+        error: error.message
+      };
+    }
+  }
+
+  protected parseSMSResponse(response: string): any[] {
+    const messages = [];
+    const lines = response.split('\r\n');
+    let currentMessage: any = null;
+
+    for (const line of lines) {
+      if (line.startsWith('+CMGL:')) {
+        if (currentMessage) {
+          messages.push(currentMessage);
         }
-      };
+        const [index, status, sender, , timestamp] = line
+          .substring(7)
+          .split(',')
+          .map(s => s.trim().replace(/"/g, ''));
 
-      const errorHandler = (error: Error) => {
-        cleanup();
-        reject(error);
-      };
-
-      const cleanup = () => {
-        clearTimeout(timeout);
-        this.port?.off('data', dataHandler);
-        this.port?.off('error', errorHandler);
-      };
-
-      this.port.on('data', dataHandler);
-      this.port.on('error', errorHandler);
-      this.port.write(`${command}\r\n`);
-    });
-  }
-
-  async setNetworkMode(mode: '4g' | '5g' | 'auto'): Promise<boolean> {
-    try {
-      const modeMap = {
-        '4g': 'AT+QNWPREFCFG="mode_pref",LTE', // LTE only
-        '5g': 'AT+QNWPREFCFG="mode_pref",NR5G', // 5G only
-        'auto': 'AT+QNWPREFCFG="mode_pref",AUTO' // Automatic
-      };
-      await this.sendAT(modeMap[mode]);
-      return true;
-    } catch (error) {
-      this.handleError(error as Error);
-      return false;
+        currentMessage = {
+          index: parseInt(index),
+          status,
+          sender,
+          timestamp: new Date(timestamp),
+          message: ''
+        };
+      } else if (currentMessage && line.trim()) {
+        currentMessage.message = line.trim();
+      }
     }
-  }
 
-  async setBands(bands: string[]): Promise<boolean> {
-    try {
-      const bandMask = this.calculateBandMask(bands);
-      await this.sendAT(`AT+QNWPREFCFG="lte_band",${bandMask}`);
-      return true;
-    } catch (error) {
-      this.handleError(error as Error);
-      return false;
+    if (currentMessage) {
+      messages.push(currentMessage);
     }
-  }
 
-  private calculateBandMask(bands: string[]): string {
-    const bandMap: { [key: string]: number } = {
-      'B1': 1, 'B2': 2, 'B3': 4, 'B4': 8, 'B5': 16,
-      'B7': 64, 'B8': 128, 'B12': 2048, 'B13': 4096,
-      'B20': 524288, 'B25': 8388608, 'B26': 16777216,
-      'B29': 268435456, 'B30': 536870912, 'B41': 2199023255552,
-      'B66': 8589934592, 'B71': 34359738368
-    };
-
-    const mask = bands.reduce((acc, band) => acc | (bandMap[band] || 0), 0);
-    return `0x${mask.toString(16)}`;
+    return messages;
   }
+}
 
-  async setCarrierAggregation(enabled: boolean): Promise<boolean> {
-    try {
-      await this.sendAT(`AT+QCAINFO=${enabled ? 1 : 0}`);
-      return true;
-    } catch (error) {
-      this.handleError(error as Error);
-      return false;
-    }
-  }
-
-  async setAPN(apn: string): Promise<boolean> {
-    try {
-      await this.sendAT(`AT+CGDCONT=1,"IP","${apn}"`);
-      return true;
-    } catch (error) {
-      this.handleError(error as Error);
-      return false;
-    }
-  }
-
-  getSignalStrength(): number {
-    try {
-      const response = this.sendAT('AT+CSQ');
-      const csq = parseInt(response.data.split(':')[1].trim());
-      return Math.min(Math.round((csq / 31) * 100), 100);
-    } catch {
-      return 0;
-    }
-  }
-
-  protected handleData(data: Buffer): void {
-    const message = data.toString().trim();
-    if (message.startsWith('+CMT:')) {
-      // SMS received
-      const [header, content] = message.split('\r\n');
-      const [, sender] = header.split(',');
-      this.emit('message', {
-        sender: sender.replace(/"/g, ''),
-        message: content.trim(),
-        timestamp: new Date()
-      });
-    }
-  }
-} 
+export default PluginSDK.createPlugin(FranklinT10Plugin); 

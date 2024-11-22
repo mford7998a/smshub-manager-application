@@ -1,139 +1,199 @@
 import { EventEmitter } from 'events';
-import { SerialPort } from 'serialport';
-import { logger } from '../../utils/logger';
+import { Logger } from '../../utils/logger';
+import { Device as USBDevice } from 'usb';
 
 export interface ModemCapabilities {
-  supportsUSSD: boolean;
-  supportsCustomAT: boolean;
-  maxBaudRate: number;
-  supportedBands: string[];
+  ussd: boolean;
+  customCommands: boolean;
+  networkSelection: boolean;
+  signalMonitoring: boolean;
+  autoFlash: boolean;
 }
 
-export interface ModemInfo {
-  manufacturer: string;
-  model: string;
-  serialNumber: string;
-  firmwareVersion: string;
-  imei: string;
-  iccid: string;
+export interface ModemStatus {
+  connected: boolean;
+  signalStrength: number;
   operator?: string;
-}
-
-export interface ATResponse {
-  success: boolean;
-  data: string;
+  technology?: string;
   error?: string;
 }
 
-export abstract class ModemPlugin extends EventEmitter {
-  protected port: SerialPort | null = null;
-  protected info: ModemInfo | null = null;
-  protected isConnected: boolean = false;
-  protected errorCount: number = 0;
-  protected lastError: Error | null = null;
-  protected startTime: number = Date.now();
+export interface NetworkInfo {
+  operator: string;
+  technology: string;
+  band?: string;
+  signal?: number;
+}
 
-  constructor(protected devicePath: string) {
+export abstract class BaseModemPlugin extends EventEmitter {
+  protected logger: Logger;
+  protected device: USBDevice | null = null;
+  protected config: Record<string, any> = {};
+  protected initialized: boolean = false;
+
+  constructor() {
     super();
+    this.logger = new Logger(this.constructor.name);
   }
 
-  abstract get capabilities(): ModemCapabilities;
-
-  abstract initialize(): Promise<boolean>;
+  // Required methods that must be implemented by plugins
+  abstract initialize(device: USBDevice): Promise<void>;
   abstract sendSMS(number: string, message: string): Promise<boolean>;
-  abstract sendAT(command: string): Promise<ATResponse>;
+  abstract readSMS(): Promise<any[]>;
+  abstract getSignalStrength(): Promise<number>;
+  abstract getNetworkInfo(): Promise<NetworkInfo>;
+  abstract reset(): Promise<void>;
+  abstract getStatus(): Promise<ModemStatus>;
 
-  async connect(): Promise<boolean> {
-    try {
-      const success = await this.initialize();
-      if (success) {
-        this.isConnected = true;
-        this.emit('connected', this.info);
+  // Optional methods that plugins can override
+  async enable(): Promise<void> {
+    if (!this.initialized && this.device) {
+      await this.initialize(this.device);
+    }
+  }
+
+  async disable(): Promise<void> {
+    this.initialized = false;
+  }
+
+  async configure(settings: Record<string, any>): Promise<void> {
+    this.config = {
+      ...this.config,
+      ...settings
+    };
+  }
+
+  getCapabilities(): ModemCapabilities {
+    return {
+      ussd: false,
+      customCommands: false,
+      networkSelection: false,
+      signalMonitoring: true,
+      autoFlash: false
+    };
+  }
+
+  // Utility methods available to all plugins
+  protected validatePhoneNumber(number: string): boolean {
+    return /^\+?[\d-]+$/.test(number);
+  }
+
+  protected validateMessage(message: string): boolean {
+    return message.length > 0 && message.length <= 160;
+  }
+
+  protected async delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  protected async retryOperation<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    delayMs: number = 1000
+  ): Promise<T> {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error as Error;
+        this.logger.warn(
+          `Operation failed (attempt ${attempt}/${maxRetries}):`,
+          error
+        );
+        if (attempt < maxRetries) {
+          await this.delay(delayMs);
+        }
       }
-      return success;
-    } catch (error) {
-      this.handleError(error as Error);
-      return false;
     }
+
+    throw lastError;
   }
 
-  async disconnect(): Promise<void> {
-    try {
-      if (this.port && this.port.isOpen) {
-        await new Promise<void>((resolve) => this.port!.close(() => resolve()));
+  protected parseSMSResponse(response: string): any[] {
+    const messages = [];
+    const lines = response.split('\r\n');
+    let currentMessage: any = null;
+
+    for (const line of lines) {
+      if (line.startsWith('+CMGL:')) {
+        if (currentMessage) {
+          messages.push(currentMessage);
+        }
+        const [index, status, sender, , timestamp] = line
+          .substring(7)
+          .split(',')
+          .map(s => s.trim().replace(/"/g, ''));
+
+        currentMessage = {
+          index: parseInt(index),
+          status,
+          sender,
+          timestamp: new Date(timestamp),
+          message: ''
+        };
+      } else if (currentMessage && line.trim()) {
+        currentMessage.message = line.trim();
       }
-      this.port = null;
-      this.isConnected = false;
-      this.emit('disconnected');
-    } catch (error) {
-      this.handleError(error as Error);
+    }
+
+    if (currentMessage) {
+      messages.push(currentMessage);
+    }
+
+    return messages;
+  }
+
+  protected parseATResponse(response: string, pattern: string): string[] {
+    const matches = response.match(new RegExp(pattern, 'gm'));
+    return matches ? matches.map(m => m.trim()) : [];
+  }
+
+  protected formatATCommand(command: string): string {
+    return command.trim() + '\r';
+  }
+
+  protected isInitialized(): void {
+    if (!this.device || !this.initialized) {
+      throw new Error('Modem not initialized');
     }
   }
 
-  async reset(): Promise<boolean> {
-    try {
-      await this.disconnect();
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      return this.connect();
-    } catch (error) {
-      this.handleError(error as Error);
-      return false;
-    }
+  protected async waitForResponse(
+    predicate: (data: string) => boolean,
+    timeoutMs: number = 10000
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      let response = '';
+      const timeout = setTimeout(() => {
+        reject(new Error('Response timeout'));
+      }, timeoutMs);
+
+      const handler = (data: string) => {
+        response += data;
+        if (predicate(response)) {
+          clearTimeout(timeout);
+          this.removeListener('data', handler);
+          resolve(response);
+        }
+      };
+
+      this.on('data', handler);
+    });
   }
 
-  getSignalStrength(): number {
-    return 0; // Override in specific plugins
-  }
-
-  getNetworkInfo(): any {
-    return {}; // Override in specific plugins
-  }
-
-  getUptime(): number {
-    return Date.now() - this.startTime;
-  }
-
-  getErrorCount(): number {
-    return this.errorCount;
-  }
-
-  getLastError(): Error | null {
-    return this.lastError;
-  }
-
-  protected handleError(error: Error): void {
-    this.errorCount++;
-    this.lastError = error;
-    logger.error(`Modem error (${this.info?.model || 'Unknown'})`, error);
+  // Event handling helpers
+  protected emitError(error: Error): void {
     this.emit('error', error);
+    this.logger.error('Modem error:', error);
   }
 
-  protected handleData(data: Buffer): void {
-    // Override in specific plugins to handle incoming data
+  protected emitStatus(status: ModemStatus): void {
+    this.emit('status', status);
   }
 
-  // Optional methods that can be implemented by specific plugins
-  async setNetworkMode?(mode: '4g' | '5g' | 'auto'): Promise<boolean> {
-    return false;
-  }
-
-  async setBands?(bands: string[]): Promise<boolean> {
-    return false;
-  }
-
-  async setCarrierAggregation?(enabled: boolean): Promise<boolean> {
-    return false;
-  }
-
-  async setAPN?(apn: string): Promise<boolean> {
-    return false;
-  }
-
-  async scanNetworks?(): Promise<any[]> {
-    return [];
-  }
-
-  async selectNetwork?(operator: string): Promise<boolean> {
-    return false;
+  protected emitMessage(message: any): void {
+    this.emit('message', message);
   }
 } 

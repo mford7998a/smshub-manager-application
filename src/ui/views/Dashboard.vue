@@ -1,187 +1,167 @@
 <template>
-  <div>
-    <!-- System Status Cards -->
+  <v-container fluid>
+    <!-- System Overview -->
     <v-row>
-      <v-col cols="12" md="3">
-        <v-card :color="systemStatus.connected ? 'success' : 'error'" variant="outlined">
-          <v-card-title class="d-flex align-center">
-            <v-icon size="24" class="mr-2">
-              {{ systemStatus.connected ? 'mdi-check-circle' : 'mdi-alert-circle' }}
-            </v-icon>
-            System Status
+      <v-col cols="12" lg="4">
+        <v-card>
+          <v-card-title>
+            System Overview
+            <v-spacer></v-spacer>
+            <v-btn icon @click="refreshStats">
+              <v-icon>mdi-refresh</v-icon>
+            </v-btn>
           </v-card-title>
           <v-card-text>
-            <div class="text-h4">{{ systemStatus.connected ? 'Online' : 'Offline' }}</div>
-            <div v-if="systemStatus.error" class="text-caption mt-2">
-              {{ systemStatus.error }}
-            </div>
+            <v-list dense>
+              <!-- Active Modems -->
+              <v-list-item>
+                <v-list-item-content>
+                  <v-list-item-title>Active Modems</v-list-item-title>
+                  <v-list-item-subtitle>{{ stats.activeModems }} / {{ stats.totalModems }}</v-list-item-subtitle>
+                </v-list-item-content>
+                <v-list-item-action>
+                  <v-icon :color="getHealthColor(stats.activeModems / stats.totalModems)">
+                    mdi-usb-port
+                  </v-icon>
+                </v-list-item-action>
+              </v-list-item>
+
+              <!-- Message Rate -->
+              <v-list-item>
+                <v-list-item-content>
+                  <v-list-item-title>Message Rate</v-list-item-title>
+                  <v-list-item-subtitle>{{ stats.messageRate.toFixed(2) }}/sec</v-list-item-subtitle>
+                </v-list-item-content>
+                <v-list-item-action>
+                  <v-icon :color="getHealthColor(1 - stats.errorRate)">
+                    mdi-message-processing
+                  </v-icon>
+                </v-list-item-action>
+              </v-list-item>
+
+              <!-- Error Rate -->
+              <v-list-item>
+                <v-list-item-content>
+                  <v-list-item-title>Error Rate</v-list-item-title>
+                  <v-list-item-subtitle>{{ (stats.errorRate * 100).toFixed(2) }}%</v-list-item-subtitle>
+                </v-list-item-content>
+                <v-list-item-action>
+                  <v-icon :color="getHealthColor(1 - stats.errorRate)">
+                    mdi-alert-circle
+                  </v-icon>
+                </v-list-item-action>
+              </v-list-item>
+
+              <!-- System Health -->
+              <v-list-item>
+                <v-list-item-content>
+                  <v-list-item-title>System Health</v-list-item-title>
+                  <v-list-item-subtitle>
+                    CPU: {{ stats.cpu.toFixed(1) }}% | Memory: {{ stats.memory.toFixed(1) }}MB
+                  </v-list-item-subtitle>
+                </v-list-item-content>
+                <v-list-item-action>
+                  <v-icon :color="getHealthColor(1 - stats.cpu / 100)">
+                    mdi-cpu-64-bit
+                  </v-icon>
+                </v-list-item-action>
+              </v-list-item>
+            </v-list>
           </v-card-text>
         </v-card>
       </v-col>
 
-      <v-col cols="12" md="3">
+      <!-- Performance Metrics -->
+      <v-col cols="12" lg="8">
         <v-card>
-          <v-card-title>Active Modems</v-card-title>
-          <v-card-text>
-            <div class="text-h4">{{ activeModems.length }}</div>
-            <v-chip
-              :color="activeModems.length > 0 ? 'success' : 'error'"
-              class="mt-2"
-            >
-              {{ activeModems.length > 0 ? 'Online' : 'No Modems' }}
-            </v-chip>
-          </v-card-text>
-        </v-card>
-      </v-col>
-
-      <v-col cols="12" md="3">
-        <v-card>
-          <v-card-title>Messages Today</v-card-title>
-          <v-card-text>
-            <div class="text-h4">{{ messagesToday }}</div>
-            <v-chip
-              :color="messagesTrend >= 0 ? 'success' : 'error'"
-              class="mt-2"
-            >
-              {{ messagesTrend >= 0 ? '+' : '' }}{{ messagesTrend }}% from yesterday
-            </v-chip>
-          </v-card-text>
-        </v-card>
-      </v-col>
-
-      <v-col cols="12" md="3">
-        <v-card>
-          <v-card-title>Success Rate</v-card-title>
-          <v-card-text>
-            <div class="text-h4">{{ successRate }}%</div>
-            <v-progress-linear
-              :model-value="successRate"
-              :color="getSuccessRateColor(successRate)"
-              height="8"
-              class="mt-2"
-            />
-          </v-card-text>
-        </v-card>
-      </v-col>
-    </v-row>
-
-    <!-- Message Activity Chart -->
-    <v-row>
-      <v-col cols="12" md="8">
-        <v-card>
-          <v-card-title class="d-flex align-center">
-            Message Activity
-            <v-spacer />
+          <v-card-title>
+            Performance Metrics
+            <v-spacer></v-spacer>
             <v-select
               v-model="timeRange"
-              :items="timeRanges"
-              density="compact"
+              :items="timeRangeOptions"
+              label="Time Range"
+              dense
               hide-details
-              class="ml-4"
-              style="max-width: 150px"
-            />
+              class="time-range-select"
+              @change="updateCharts"
+            ></v-select>
           </v-card-title>
           <v-card-text>
-            <v-chart
-              :option="messageActivity"
-              autoresize
-              style="height: 300px"
-            />
+            <v-row>
+              <!-- Message Rate Chart -->
+              <v-col cols="12" md="6">
+                <v-chart :option="messageRateChart" autoresize />
+              </v-col>
+              <!-- Error Rate Chart -->
+              <v-col cols="12" md="6">
+                <v-chart :option="errorRateChart" autoresize />
+              </v-col>
+            </v-row>
           </v-card-text>
-        </v-card>
-      </v-col>
-
-      <!-- Recent Events -->
-      <v-col cols="12" md="4">
-        <v-card>
-          <v-card-title class="d-flex align-center">
-            Recent Events
-            <v-spacer />
-            <v-btn
-              icon="mdi-refresh"
-              size="small"
-              @click="loadEvents"
-              :loading="loading"
-            />
-          </v-card-title>
-          <v-list lines="two">
-            <v-list-item
-              v-for="(event, index) in recentEvents"
-              :key="index"
-              :subtitle="new Date(event.timestamp).toLocaleString()"
-              :prepend-icon="event.type === 'error' ? 'mdi-alert' : 'mdi-information'"
-              :prepend-icon-color="event.type === 'error' ? 'error' : 'info'"
-            >
-              {{ event.message }}
-            </v-list-item>
-            <v-list-item v-if="recentEvents.length === 0">
-              <v-list-item-title>No recent events</v-list-item-title>
-            </v-list-item>
-          </v-list>
         </v-card>
       </v-col>
     </v-row>
 
-    <!-- Active Modems Table -->
+    <!-- Modem Status -->
     <v-row>
       <v-col cols="12">
         <v-card>
-          <v-card-title class="d-flex align-center">
-            Active Modems
-            <v-spacer />
+          <v-card-title>
+            Modem Status
+            <v-spacer></v-spacer>
             <v-text-field
               v-model="search"
               append-icon="mdi-magnify"
               label="Search"
+              single-line
               hide-details
-              density="compact"
-              class="ml-4"
-              style="max-width: 300px"
-            />
+            ></v-text-field>
           </v-card-title>
 
           <v-data-table
-            :headers="modemHeaders"
-            :items="activeModems"
+            :headers="headers"
+            :items="modems"
             :search="search"
             :loading="loading"
+            :items-per-page="10"
           >
-            <template v-slot:item.signal="{ item }">
+            <!-- Status Column -->
+            <template v-slot:item.status="{ item }">
+              <v-chip :color="getStatusColor(item.status)" small>
+                {{ item.status }}
+              </v-chip>
+            </template>
+
+            <!-- Signal Strength Column -->
+            <template v-slot:item.signalStrength="{ item }">
               <v-progress-linear
-                :model-value="item.raw.signal"
-                :color="getSignalColor(item.raw.signal)"
+                :value="item.signalStrength"
+                :color="getSignalColor(item.signalStrength)"
                 height="20"
               >
-                <template v-slot:default="{ value }">
-                  <strong>{{ Math.ceil(value) }}%</strong>
+                <template v-slot:default>
+                  {{ item.signalStrength }}%
                 </template>
               </v-progress-linear>
             </template>
 
+            <!-- Actions Column -->
             <template v-slot:item.actions="{ item }">
               <v-btn
                 icon
-                variant="text"
-                :loading="item.raw.resetting"
-                @click="resetModem(item.raw)"
-                :title="'Reset ' + item.raw.model"
+                small
+                @click="resetModem(item)"
+                :loading="item.resetting"
+                :disabled="item.status === 'disconnected'"
               >
                 <v-icon>mdi-refresh</v-icon>
               </v-btn>
               <v-btn
                 icon
-                variant="text"
-                @click="showModemDetails(item.raw)"
-                :title="'View details for ' + item.raw.model"
-              >
-                <v-icon>mdi-information</v-icon>
-              </v-btn>
-              <v-btn
-                icon
-                variant="text"
-                color="primary"
-                @click="showModemConfig(item.raw)"
-                :title="'Configure ' + item.raw.model"
+                small
+                @click="configureModem(item)"
+                :disabled="item.status === 'disconnected'"
               >
                 <v-icon>mdi-cog</v-icon>
               </v-btn>
@@ -191,102 +171,54 @@
       </v-col>
     </v-row>
 
-    <!-- Modem Details Dialog -->
-    <v-dialog v-model="detailsDialog" max-width="800px">
-      <v-card v-if="selectedModem">
+    <!-- Modem Configuration Dialog -->
+    <v-dialog v-model="configDialog" max-width="600px">
+      <v-card>
         <v-card-title>
-          {{ selectedModem.model }} Details
-          <v-spacer />
-          <v-btn icon @click="detailsDialog = false">
+          Configure Modem
+          <v-spacer></v-spacer>
+          <v-btn icon @click="configDialog = false">
             <v-icon>mdi-close</v-icon>
           </v-btn>
         </v-card-title>
-
         <v-card-text>
-          <v-tabs v-model="activeTab">
-            <v-tab value="info">Information</v-tab>
-            <v-tab value="signal">Signal History</v-tab>
-            <v-tab value="messages">Messages</v-tab>
-          </v-tabs>
-
-          <v-window v-model="activeTab">
-            <v-window-item value="info">
-              <v-list>
-                <v-list-item>
-                  <v-list-item-title>IMEI</v-list-item-title>
-                  <v-list-item-subtitle>{{ selectedModem.imei }}</v-list-item-subtitle>
-                </v-list-item>
-                <v-list-item>
-                  <v-list-item-title>Operator</v-list-item-title>
-                  <v-list-item-subtitle>{{ selectedModem.operator }}</v-list-item-subtitle>
-                </v-list-item>
-                <v-list-item>
-                  <v-list-item-title>Messages Today</v-list-item-title>
-                  <v-list-item-subtitle>{{ selectedModem.messagesProcessed }}</v-list-item-subtitle>
-                </v-list-item>
-                <v-list-item>
-                  <v-list-item-title>Success Rate</v-list-item-title>
-                  <v-list-item-subtitle>{{ selectedModem.successRate }}%</v-list-item-subtitle>
-                </v-list-item>
-                <v-list-item>
-                  <v-list-item-title>Network Mode</v-list-item-title>
-                  <v-list-item-subtitle>{{ selectedModem.networkMode }}</v-list-item-subtitle>
-                </v-list-item>
-                <v-list-item>
-                  <v-list-item-title>Active Bands</v-list-item-title>
-                  <v-list-item-subtitle>
-                    <v-chip-group>
-                      <v-chip
-                        v-for="band in selectedModem.activeBands"
-                        :key="band"
-                        size="small"
-                        color="primary"
-                      >
-                        {{ band }}
-                      </v-chip>
-                    </v-chip-group>
-                  </v-list-item-subtitle>
-                </v-list-item>
-              </v-list>
-            </v-window-item>
-
-            <v-window-item value="signal">
-              <v-chart
-                :option="signalHistory"
-                autoresize
-                style="height: 300px"
-              />
-            </v-window-item>
-
-            <v-window-item value="messages">
-              <v-data-table
-                :headers="messageHeaders"
-                :items="selectedModem.recentMessages || []"
-                :loading="loadingMessages"
-              >
-                <template v-slot:item.status="{ item }">
-                  <v-chip
-                    :color="getStatusColor(item.raw.status)"
-                    size="small"
-                  >
-                    {{ item.raw.status }}
-                  </v-chip>
-                </template>
-              </v-data-table>
-            </v-window-item>
-          </v-window>
+          <v-form ref="configForm">
+            <v-text-field
+              v-model="selectedModem.name"
+              label="Name"
+              required
+            ></v-text-field>
+            <v-select
+              v-model="selectedModem.mode"
+              :items="networkModes"
+              label="Network Mode"
+            ></v-select>
+            <v-switch
+              v-model="selectedModem.autoReconnect"
+              label="Auto Reconnect"
+            ></v-switch>
+          </v-form>
         </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn
+            color="primary"
+            @click="saveModemConfig"
+            :loading="saving"
+          >
+            Save
+          </v-btn>
+        </v-card-actions>
       </v-card>
     </v-dialog>
-  </div>
+  </v-container>
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, computed, onMounted, onUnmounted } from 'vue';
-import { useStore } from 'vuex';
+import { defineComponent, ref, onMounted, onUnmounted } from 'vue';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
-import { LineChart, BarChart } from 'echarts/charts';
+import { LineChart } from 'echarts/charts';
 import {
   GridComponent,
   TooltipComponent,
@@ -298,7 +230,6 @@ import VChart from 'vue-echarts';
 use([
   CanvasRenderer,
   LineChart,
-  BarChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
@@ -307,93 +238,127 @@ use([
 
 export default defineComponent({
   name: 'Dashboard',
-  components: { VChart },
+  components: {
+    VChart
+  },
 
   setup() {
-    const store = useStore();
+    // State
+    const stats = ref({
+      activeModems: 0,
+      totalModems: 0,
+      messageRate: 0,
+      errorRate: 0,
+      cpu: 0,
+      memory: 0
+    });
+
+    const modems = ref([]);
     const loading = ref(false);
-    const loadingMessages = ref(false);
     const search = ref('');
-    const detailsDialog = ref(false);
-    const selectedModem = ref<any>(null);
-    const activeTab = ref('info');
-    const timeRange = ref('24h');
+    const timeRange = ref('1h');
+    const configDialog = ref(false);
+    const selectedModem = ref({});
+    const saving = ref(false);
 
-    const systemStatus = computed(() => store.state.systemStatus);
-    const activeModems = computed(() => store.state.modems.filter((m: any) => m.status === 'online'));
-    const activePlugins = computed(() => store.state.plugins.filter((p: any) => p.enabled).length);
-    const totalPlugins = computed(() => store.state.plugins.length);
-    const messagesToday = computed(() => store.state.statistics.summary?.totalMessages || 0);
-    const messagesTrend = computed(() => store.state.statistics.summary?.messagesTrend || 0);
-    const successRate = computed(() => store.state.statistics.summary?.successRate || 0);
+    // Options
+    const timeRangeOptions = [
+      { text: 'Last Hour', value: '1h' },
+      { text: 'Last 24 Hours', value: '24h' },
+      { text: 'Last 7 Days', value: '7d' },
+      { text: 'Last 30 Days', value: '30d' }
+    ];
 
-    const messageActivity = computed(() => ({
+    const headers = [
+      { text: 'ID', value: 'id' },
+      { text: 'Model', value: 'model' },
+      { text: 'Status', value: 'status' },
+      { text: 'Signal', value: 'signalStrength' },
+      { text: 'Messages', value: 'messageCount' },
+      { text: 'Errors', value: 'errorCount' },
+      { text: 'Actions', value: 'actions', sortable: false }
+    ];
+
+    const networkModes = [
+      { text: 'Auto', value: 'auto' },
+      { text: '4G Only', value: '4g' },
+      { text: '3G Only', value: '3g' },
+      { text: '2G Only', value: '2g' }
+    ];
+
+    // Chart options
+    const messageRateChart = ref({
       tooltip: {
-        trigger: 'axis',
-        axisPointer: {
-          type: 'shadow'
-        }
+        trigger: 'axis'
       },
-      grid: {
-        left: '3%',
-        right: '4%',
-        bottom: '3%',
-        containLabel: true
+      legend: {
+        data: ['Messages/sec']
       },
       xAxis: {
-        type: 'category',
-        data: store.state.statistics.messageVolume?.labels || []
+        type: 'time'
       },
       yAxis: {
         type: 'value'
       },
       series: [{
-        data: store.state.statistics.messageVolume?.data || [],
-        type: 'bar',
-        smooth: true
+        name: 'Messages/sec',
+        type: 'line',
+        smooth: true,
+        data: []
       }]
-    }));
+    });
 
-    const signalHistory = computed(() => ({
+    const errorRateChart = ref({
       tooltip: {
         trigger: 'axis'
       },
+      legend: {
+        data: ['Error Rate %']
+      },
       xAxis: {
-        type: 'time',
-        boundaryGap: false
+        type: 'time'
       },
       yAxis: {
         type: 'value',
-        min: 0,
         max: 100
       },
       series: [{
-        data: selectedModem.value?.signalHistory || [],
+        name: 'Error Rate %',
         type: 'line',
-        smooth: true
+        smooth: true,
+        data: []
       }]
-    }));
+    });
 
-    const modemHeaders = [
-      { title: 'Model', key: 'model' },
-      { title: 'Operator', key: 'operator' },
-      { title: 'Signal', key: 'signal' },
-      { title: 'Messages Today', key: 'messagesProcessed' },
-      { title: 'Success Rate', key: 'successRate', suffix: '%' },
-      { title: 'Actions', key: 'actions', sortable: false }
-    ];
+    // Methods
+    const refreshStats = async () => {
+      loading.value = true;
+      try {
+        stats.value = await window.api.getSystemStats();
+        modems.value = await window.api.getModems();
+        await updateCharts();
+      } catch (error) {
+        console.error('Failed to refresh stats:', error);
+      } finally {
+        loading.value = false;
+      }
+    };
 
-    const recentEvents = computed(() => store.state.events || []);
-
-    const showModemDetails = (modem: any) => {
-      selectedModem.value = modem;
-      detailsDialog.value = true;
+    const updateCharts = async () => {
+      try {
+        const data = await window.api.getPerformanceMetrics(timeRange.value);
+        messageRateChart.value.series[0].data = data.messageRates;
+        errorRateChart.value.series[0].data = data.errorRates;
+      } catch (error) {
+        console.error('Failed to update charts:', error);
+      }
     };
 
     const resetModem = async (modem: any) => {
       modem.resetting = true;
       try {
         await window.api.resetModem(modem.id);
+        await refreshStats();
       } catch (error) {
         console.error('Failed to reset modem:', error);
       } finally {
@@ -401,103 +366,103 @@ export default defineComponent({
       }
     };
 
-    const getSuccessRateColor = (rate: number): string => {
-      if (rate >= 90) return 'success';
-      if (rate >= 70) return 'warning';
-      return 'error';
+    const configureModem = (modem: any) => {
+      selectedModem.value = { ...modem };
+      configDialog.value = true;
     };
 
-    const getSignalColor = (signal: number): string => {
-      if (signal >= 70) return 'success';
-      if (signal >= 40) return 'warning';
+    const saveModemConfig = async () => {
+      saving.value = true;
+      try {
+        await window.api.configureModem(
+          selectedModem.value.id,
+          selectedModem.value
+        );
+        configDialog.value = false;
+        await refreshStats();
+      } catch (error) {
+        console.error('Failed to save modem config:', error);
+      } finally {
+        saving.value = false;
+      }
+    };
+
+    // Utility functions
+    const getHealthColor = (value: number): string => {
+      if (value >= 0.8) return 'success';
+      if (value >= 0.5) return 'warning';
       return 'error';
     };
 
     const getStatusColor = (status: string): string => {
-      if (status === 'sent') return 'success';
-      if (status === 'received') return 'info';
+      const colors: Record<string, string> = {
+        ready: 'success',
+        initializing: 'info',
+        error: 'error',
+        disconnected: 'grey'
+      };
+      return colors[status] || 'grey';
+    };
+
+    const getSignalColor = (strength: number): string => {
+      if (strength >= 70) return 'success';
+      if (strength >= 40) return 'warning';
       return 'error';
     };
 
-    const timeRanges = [
-      { text: '24h', value: '24h' },
-      { text: '7d', value: '7d' },
-      { text: '30d', value: '30d' }
-    ];
-
-    const messageHeaders = [
-      { title: 'Status', key: 'status' },
-      { title: 'Message', key: 'message' },
-      { title: 'Timestamp', key: 'timestamp' }
-    ];
-
-    const showModemConfig = (modem: any) => {
-      // Implement modem configuration dialog
-    };
-
-    const loadEvents = async () => {
-      loading.value = true;
-      try {
-        await store.dispatch('loadEvents');
-      } catch (error) {
-        console.error('Failed to load events:', error);
-      } finally {
-        loading.value = false;
-      }
-    };
-
+    // Lifecycle hooks
     onMounted(async () => {
-      loading.value = true;
-      try {
-        await store.dispatch('loadStatistics', '24h');
-      } catch (error) {
-        console.error('Failed to load statistics:', error);
-      } finally {
-        loading.value = false;
-      }
+      await refreshStats();
+      // Start auto-refresh
+      const refreshInterval = setInterval(refreshStats, 30000);
+      onUnmounted(() => clearInterval(refreshInterval));
+
+      // Setup WebSocket updates
+      window.api.on('stats:updated', (newStats: any) => {
+        stats.value = newStats;
+      });
+
+      window.api.on('modem:updated', (modemId: string) => {
+        refreshStats();
+      });
     });
 
     return {
+      stats,
+      modems,
       loading,
-      loadingMessages,
       search,
       timeRange,
-      detailsDialog,
+      timeRangeOptions,
+      headers,
+      networkModes,
+      configDialog,
       selectedModem,
-      activeTab,
-      systemStatus,
-      activeModems,
-      messagesToday,
-      messagesTrend,
-      successRate,
-      messageActivity,
-      recentEvents,
-      modemHeaders,
-      messageHeaders,
-      signalHistory,
-      timeRanges,
-      showModemDetails,
-      showModemConfig,
+      saving,
+      messageRateChart,
+      errorRateChart,
+      refreshStats,
       resetModem,
-      loadEvents,
-      getSuccessRateColor,
-      getSignalColor,
-      getStatusColor
+      configureModem,
+      saveModemConfig,
+      getHealthColor,
+      getStatusColor,
+      getSignalColor
     };
   }
 });
 </script>
 
 <style scoped>
-.v-card-title {
-  font-size: 1.1rem;
+.time-range-select {
+  max-width: 150px;
 }
 
-.text-h4 {
-  font-weight: 500;
+.v-card {
+  margin-bottom: 16px;
 }
 
-.v-list-item-subtitle {
-  white-space: pre-wrap;
+.echarts {
+  min-height: 300px;
 }
 </style> 

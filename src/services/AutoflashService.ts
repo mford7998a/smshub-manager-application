@@ -1,5 +1,5 @@
 import path from 'path';
-import fs from 'fs/promises';
+import fs from 'fs-extra';
 import axios from 'axios';
 import { logger } from '../utils/logger';
 import { Config } from '../utils/Config';
@@ -105,9 +105,7 @@ export class AutoflashService {
 
     try {
       // Check if firmware already exists
-      const exists = await fs.access(firmwarePath)
-        .then(() => true)
-        .catch(() => false);
+      const exists = await fs.pathExists(firmwarePath);
 
       if (exists) {
         // Verify existing firmware
@@ -115,7 +113,7 @@ export class AutoflashService {
           return firmwarePath;
         }
         // If verification fails, delete and re-download
-        await fs.unlink(firmwarePath);
+        await fs.remove(firmwarePath);
       }
 
       // Download firmware
